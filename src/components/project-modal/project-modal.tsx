@@ -7,7 +7,6 @@ import {
   CAPSTONE_NOTE,
   INITIAL_DATA,
   PROJECT_PATHS,
-  QUOTE_EMAIL,
   SYSTEM_TYPES,
   type Option,
   type Path,
@@ -21,6 +20,7 @@ import {
   StepHeading,
   TextArea,
 } from "./controls";
+import { submitQuote } from "@/lib/api";
 
 const FORM_STEPS = 4;
 const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
@@ -43,7 +43,11 @@ export function ProjectModal({
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const [data, setData] = useState<QuoteData>(INITIAL_DATA);
-  const [submitted, setSubmitted] = useState(false);
+  const [phase, setPhase] = useState<"form" | "sending" | "done" | "error">(
+    "form"
+  );
+  const [errorMsg, setErrorMsg] = useState("");
+  const [reference, setReference] = useState("");
 
   // fresh state every time the modal opens
   useEffect(() => {
@@ -51,7 +55,9 @@ export function ProjectModal({
       setStep(0);
       setDir(1);
       setData(INITIAL_DATA);
-      setSubmitted(false);
+      setPhase("form");
+      setErrorMsg("");
+      setReference("");
     }
   }, [open]);
 
@@ -120,8 +126,22 @@ export function ProjectModal({
       setStep((s) => s - 1);
     }
   };
-  const submit = () => {
-    if (canProceed(FORM_STEPS)) setSubmitted(true);
+  const submit = async () => {
+    if (!canProceed(FORM_STEPS) || phase === "sending") return;
+    setPhase("sending");
+    setErrorMsg("");
+    try {
+      const res = await submitQuote(data);
+      setReference(res.reference);
+      setPhase("done");
+    } catch (e) {
+      setErrorMsg(
+        e instanceof Error
+          ? e.message
+          : "Something went wrong. Please try again."
+      );
+      setPhase("error");
+    }
   };
 
   const budgetText =
@@ -147,34 +167,14 @@ export function ProjectModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isCapstone]);
 
-  const mailto = useMemo(() => {
-    const lines = [
-      `Project for: ${isCapstone ? "Capstone / Thesis" : "Business"}`,
-      ...summary.slice(1).map(([k, v]) => `${k}: ${v}`),
-      "",
-      "Details:",
-      data.description || "—",
-      "",
-      "Contact:",
-      `Name: ${data.name}`,
-      `Email: ${data.email}`,
-      data.phone ? `Phone: ${data.phone}` : "",
-      data.org ? `School / Company: ${data.org}` : "",
-    ].filter(Boolean);
-    const subject = `New project request — ${
-      isCapstone ? "Capstone" : "Business"
-    }`;
-    return `mailto:${QUOTE_EMAIL}?subject=${encodeURIComponent(
-      subject
-    )}&body=${encodeURIComponent(lines.join("\n"))}`;
-  }, [data, summary, isCapstone]);
-
-  const stepLabel = submitted
-    ? "Request ready"
-    : step === 0
-      ? "Choose a path"
-      : `Step ${step} of ${FORM_STEPS}`;
-  const progress = submitted ? 100 : step === 0 ? 6 : (step / FORM_STEPS) * 100;
+  const stepLabel =
+    phase === "done"
+      ? "Request received"
+      : step === 0
+        ? "Choose a path"
+        : `Step ${step} of ${FORM_STEPS}`;
+  const progress =
+    phase === "done" ? 100 : step === 0 ? 6 : (step / FORM_STEPS) * 100;
 
   return (
     <AnimatePresence>
@@ -236,8 +236,12 @@ export function ProjectModal({
 
             {/* body */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              {submitted ? (
-                <Success summary={summary} name={data.name} />
+              {phase === "done" ? (
+                <Success
+                  summary={summary}
+                  name={data.name}
+                  reference={reference}
+                />
               ) : (
                 <AnimatePresence mode="wait" custom={dir}>
                   <motion.div
@@ -466,14 +470,23 @@ export function ProjectModal({
               )}
             </div>
 
+            {/* error banner */}
+            {phase === "error" && (
+              <div className="shrink-0 border-t border-line bg-[#fdebec] px-6 py-3 text-[13px] text-[#9f2f2d]">
+                {errorMsg} Please try again in a moment.
+              </div>
+            )}
+
             {/* footer */}
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-6 py-4">
-              {submitted ? (
+              {phase === "done" ? (
                 <>
                   <button
                     type="button"
                     onClick={() => {
-                      setSubmitted(false);
+                      setPhase("form");
+                      setReference("");
+                      setErrorMsg("");
                       setStep(0);
                       setData(INITIAL_DATA);
                     }}
@@ -481,12 +494,13 @@ export function ProjectModal({
                   >
                     Start another
                   </button>
-                  <a
-                    href={mailto}
+                  <button
+                    type="button"
+                    onClick={onClose}
                     className="rounded-md bg-ink px-5 py-2.5 text-sm font-semibold text-canvas transition-transform hover:bg-ink-soft active:scale-[0.98]"
                   >
-                    Send to our inbox
-                  </a>
+                    Close
+                  </button>
                 </>
               ) : (
                 <>
@@ -523,10 +537,10 @@ export function ProjectModal({
                     <button
                       type="button"
                       onClick={submit}
-                      disabled={!canProceed(FORM_STEPS)}
+                      disabled={!canProceed(FORM_STEPS) || phase === "sending"}
                       className="rounded-md bg-ink px-5 py-2.5 text-sm font-semibold text-canvas transition-all hover:bg-ink-soft active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Submit request
+                      {phase === "sending" ? "Sending…" : "Submit request"}
                     </button>
                   )}
                 </>
@@ -542,9 +556,11 @@ export function ProjectModal({
 function Success({
   summary,
   name,
+  reference,
 }: {
   summary: [string, string][];
   name: string;
+  reference: string;
 }) {
   return (
     <div className="py-4 text-center">
@@ -560,12 +576,17 @@ function Success({
         </svg>
       </div>
       <h3 className="font-display mt-5 text-3xl text-ink">
-        Thanks{name ? `, ${name.split(" ")[0]}` : ""}.
+        Thank you{name ? `, ${name.split(" ")[0]}` : ""}!
       </h3>
       <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-        Your request is ready. Tap “Send to our inbox” to deliver it, and
-        we&apos;ll reply within one business day with a quote and next steps.
+        We&apos;ve received your request. Please wait for our message through
+        email or your contact number — usually within one business day.
       </p>
+      {reference && (
+        <p className="mt-3 font-mono text-xs uppercase tracking-[0.14em] text-muted">
+          Reference <span className="text-ink">{reference}</span>
+        </p>
+      )}
       <div className="mx-auto mt-6 max-w-sm rounded-xl border border-line bg-canvas p-4 text-left">
         <dl className="space-y-1.5">
           {summary.map(([k, v]) => (
