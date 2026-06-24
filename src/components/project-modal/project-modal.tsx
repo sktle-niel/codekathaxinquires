@@ -7,7 +7,6 @@ import {
   CAPSTONE_NOTE,
   INITIAL_DATA,
   PROJECT_PATHS,
-  QUOTE_EMAIL,
   SYSTEM_TYPES,
   type Option,
   type Path,
@@ -21,9 +20,17 @@ import {
   StepHeading,
   TextArea,
 } from "./controls";
+import { submitQuote } from "@/lib/api";
+import {
+  validateName,
+  validateEmail,
+  validateContact,
+  validateText,
+  validateDescription,
+  validateCustomBudget,
+} from "@/lib/validation";
 
 const FORM_STEPS = 4;
-const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const labelOf = (list: Option[], id: string) =>
   list.find((o) => o.id === id)?.title ?? "—";
 
@@ -43,7 +50,12 @@ export function ProjectModal({
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const [data, setData] = useState<QuoteData>(INITIAL_DATA);
-  const [submitted, setSubmitted] = useState(false);
+  const [phase, setPhase] = useState<"form" | "sending" | "done" | "error">(
+    "form"
+  );
+  const [errorMsg, setErrorMsg] = useState("");
+  const [reference, setReference] = useState("");
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   // fresh state every time the modal opens
   useEffect(() => {
@@ -51,7 +63,10 @@ export function ProjectModal({
       setStep(0);
       setDir(1);
       setData(INITIAL_DATA);
-      setSubmitted(false);
+      setPhase("form");
+      setErrorMsg("");
+      setReference("");
+      setTouched({});
     }
   }, [open]);
 
@@ -81,27 +96,57 @@ export function ProjectModal({
   const isCapstone = data.path === "capstone";
   const budgets = isCapstone ? CAPSTONE_BUDGETS : BUSINESS_BUDGETS;
 
-  const canProceed = (s: number): boolean => {
+  // Per-step validation. Returns { field: message } for anything invalid.
+  const stepErrors = (s: number): Record<string, string> => {
+    const e: Record<string, string> = {};
+    const add = (k: string, msg: string | null) => {
+      if (msg) e[k] = msg;
+    };
     switch (s) {
       case 0:
-        return !!data.path;
+        if (!data.path) e.path = "Please choose what this project is for.";
+        break;
       case 1:
-        return isCapstone ? !!data.systemType : !!data.service;
+        if (isCapstone) {
+          if (!data.systemType) e.systemType = "Please choose a system type.";
+        } else if (!data.service) {
+          e.service = "Please choose what you need.";
+        }
+        break;
       case 2:
-        return isCapstone
-          ? data.projectTitle.trim() !== "" && data.description.trim() !== ""
-          : data.businessName.trim() !== "" && data.description.trim() !== "";
+        if (isCapstone) {
+          add("projectTitle", validateText(data.projectTitle, { label: "your project title", min: 3 }));
+        } else {
+          add("businessName", validateText(data.businessName, { label: "your business name", min: 2 }));
+          if (data.industry.trim()) {
+            add("industry", validateText(data.industry, { label: "industry", min: 2 }));
+          }
+        }
+        add("description", validateDescription(data.description));
+        break;
       case 3:
-        return (
-          data.budget !== "" &&
-          (data.budget !== "custom" || data.customBudget.trim() !== "")
-        );
+        if (!data.budget) {
+          e.budget = "Please select a budget.";
+        } else if (data.budget === "custom") {
+          add("customBudget", validateCustomBudget(data.customBudget));
+        }
+        break;
       case 4:
-        return data.name.trim() !== "" && emailOk(data.email);
-      default:
-        return false;
+        add("name", validateName(data.name));
+        add("email", validateEmail(data.email));
+        add("phone", validateContact(data.phone));
+        if (data.org.trim()) {
+          add("org", validateText(data.org, { label: isCapstone ? "school" : "company", min: 2 }));
+        }
+        break;
     }
+    return e;
   };
+
+  const errors = stepErrors(step);
+  const canProceed = (s: number): boolean => Object.keys(stepErrors(s)).length === 0;
+  const markTouched = (k: string) => setTouched((t) => (t[k] ? t : { ...t, [k]: true }));
+  const errOf = (k: string): string | undefined => (touched[k] ? errors[k] : undefined);
 
   const choosePath = (p: Path) => {
     setDir(1);
@@ -120,8 +165,26 @@ export function ProjectModal({
       setStep((s) => s - 1);
     }
   };
-  const submit = () => {
-    if (canProceed(FORM_STEPS)) setSubmitted(true);
+  const submit = async () => {
+    if (phase === "sending") return;
+    if (!canProceed(FORM_STEPS)) {
+      setTouched((t) => ({ ...t, name: true, email: true, phone: true, org: true }));
+      return;
+    }
+    setPhase("sending");
+    setErrorMsg("");
+    try {
+      const res = await submitQuote(data);
+      setReference(res.reference);
+      setPhase("done");
+    } catch (e) {
+      setErrorMsg(
+        e instanceof Error
+          ? e.message
+          : "Something went wrong. Please try again."
+      );
+      setPhase("error");
+    }
   };
 
   const budgetText =
@@ -147,34 +210,14 @@ export function ProjectModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isCapstone]);
 
-  const mailto = useMemo(() => {
-    const lines = [
-      `Project for: ${isCapstone ? "Capstone / Thesis" : "Business"}`,
-      ...summary.slice(1).map(([k, v]) => `${k}: ${v}`),
-      "",
-      "Details:",
-      data.description || "—",
-      "",
-      "Contact:",
-      `Name: ${data.name}`,
-      `Email: ${data.email}`,
-      data.phone ? `Phone: ${data.phone}` : "",
-      data.org ? `School / Company: ${data.org}` : "",
-    ].filter(Boolean);
-    const subject = `New project request — ${
-      isCapstone ? "Capstone" : "Business"
-    }`;
-    return `mailto:${QUOTE_EMAIL}?subject=${encodeURIComponent(
-      subject
-    )}&body=${encodeURIComponent(lines.join("\n"))}`;
-  }, [data, summary, isCapstone]);
-
-  const stepLabel = submitted
-    ? "Request ready"
-    : step === 0
-      ? "Choose a path"
-      : `Step ${step} of ${FORM_STEPS}`;
-  const progress = submitted ? 100 : step === 0 ? 6 : (step / FORM_STEPS) * 100;
+  const stepLabel =
+    phase === "done"
+      ? "Request received"
+      : step === 0
+        ? "Choose a path"
+        : `Step ${step} of ${FORM_STEPS}`;
+  const progress =
+    phase === "done" ? 100 : step === 0 ? 6 : (step / FORM_STEPS) * 100;
 
   return (
     <AnimatePresence>
@@ -236,8 +279,12 @@ export function ProjectModal({
 
             {/* body */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              {submitted ? (
-                <Success summary={summary} name={data.name} />
+              {phase === "done" ? (
+                <Success
+                  summary={summary}
+                  name={data.name}
+                  reference={reference}
+                />
               ) : (
                 <AnimatePresence mode="wait" custom={dir}>
                   <motion.div
@@ -315,6 +362,8 @@ export function ProjectModal({
                             label="Project title"
                             value={data.projectTitle}
                             onChange={(v) => set("projectTitle", v)}
+                            onBlur={() => markTouched("projectTitle")}
+                            error={errOf("projectTitle")}
                             placeholder="e.g. Library Management System"
                             required
                           />
@@ -322,6 +371,8 @@ export function ProjectModal({
                             label="What should it do?"
                             value={data.description}
                             onChange={(v) => set("description", v)}
+                            onBlur={() => markTouched("description")}
+                            error={errOf("description")}
                             placeholder="Main features, users, and any requirements from your adviser."
                             required
                           />
@@ -344,6 +395,8 @@ export function ProjectModal({
                             label="Business name"
                             value={data.businessName}
                             onChange={(v) => set("businessName", v)}
+                            onBlur={() => markTouched("businessName")}
+                            error={errOf("businessName")}
                             placeholder="e.g. Sunrise Travel & Tours"
                             required
                           />
@@ -351,6 +404,8 @@ export function ProjectModal({
                             label="Industry"
                             value={data.industry}
                             onChange={(v) => set("industry", v)}
+                            onBlur={() => markTouched("industry")}
+                            error={errOf("industry")}
                             placeholder="e.g. Travel, Retail, Food"
                             optional
                           />
@@ -358,6 +413,8 @@ export function ProjectModal({
                             label="What do you want to build?"
                             value={data.description}
                             onChange={(v) => set("description", v)}
+                            onBlur={() => markTouched("description")}
+                            error={errOf("description")}
                             placeholder="Goals, features, and who it's for."
                             required
                           />
@@ -394,6 +451,8 @@ export function ProjectModal({
                               label="Your budget"
                               value={data.customBudget}
                               onChange={(v) => set("customBudget", v)}
+                              onBlur={() => markTouched("customBudget")}
+                              error={errOf("customBudget")}
                               placeholder="e.g. ₱4,500 or what you can afford"
                               required
                             />
@@ -431,14 +490,19 @@ export function ProjectModal({
                             label="Full name"
                             value={data.name}
                             onChange={(v) => set("name", v)}
+                            onBlur={() => markTouched("name")}
+                            error={errOf("name")}
                             placeholder="Your name"
                             required
                           />
                           <Field
                             label="Email"
                             type="email"
+                            inputMode="email"
                             value={data.email}
                             onChange={(v) => set("email", v)}
+                            onBlur={() => markTouched("email")}
+                            error={errOf("email")}
                             placeholder="you@email.com"
                             required
                           />
@@ -446,6 +510,8 @@ export function ProjectModal({
                             label="Phone / Messenger"
                             value={data.phone}
                             onChange={(v) => set("phone", v)}
+                            onBlur={() => markTouched("phone")}
+                            error={errOf("phone")}
                             placeholder="09xx xxx xxxx"
                             optional
                           />
@@ -453,6 +519,8 @@ export function ProjectModal({
                             label={isCapstone ? "School" : "Company"}
                             value={data.org}
                             onChange={(v) => set("org", v)}
+                            onBlur={() => markTouched("org")}
+                            error={errOf("org")}
                             placeholder={
                               isCapstone ? "Your school / university" : "Your company"
                             }
@@ -466,14 +534,23 @@ export function ProjectModal({
               )}
             </div>
 
+            {/* error banner */}
+            {phase === "error" && (
+              <div className="shrink-0 border-t border-line bg-[#fdebec] px-6 py-3 text-[13px] text-[#9f2f2d]">
+                {errorMsg} Please try again in a moment.
+              </div>
+            )}
+
             {/* footer */}
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-6 py-4">
-              {submitted ? (
+              {phase === "done" ? (
                 <>
                   <button
                     type="button"
                     onClick={() => {
-                      setSubmitted(false);
+                      setPhase("form");
+                      setReference("");
+                      setErrorMsg("");
                       setStep(0);
                       setData(INITIAL_DATA);
                     }}
@@ -481,12 +558,13 @@ export function ProjectModal({
                   >
                     Start another
                   </button>
-                  <a
-                    href={mailto}
+                  <button
+                    type="button"
+                    onClick={onClose}
                     className="rounded-md bg-ink px-5 py-2.5 text-sm font-semibold text-canvas transition-transform hover:bg-ink-soft active:scale-[0.98]"
                   >
-                    Send to our inbox
-                  </a>
+                    Close
+                  </button>
                 </>
               ) : (
                 <>
@@ -523,10 +601,10 @@ export function ProjectModal({
                     <button
                       type="button"
                       onClick={submit}
-                      disabled={!canProceed(FORM_STEPS)}
+                      disabled={!canProceed(FORM_STEPS) || phase === "sending"}
                       className="rounded-md bg-ink px-5 py-2.5 text-sm font-semibold text-canvas transition-all hover:bg-ink-soft active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Submit request
+                      {phase === "sending" ? "Sending…" : "Submit request"}
                     </button>
                   )}
                 </>
@@ -542,9 +620,11 @@ export function ProjectModal({
 function Success({
   summary,
   name,
+  reference,
 }: {
   summary: [string, string][];
   name: string;
+  reference: string;
 }) {
   return (
     <div className="py-4 text-center">
@@ -560,12 +640,17 @@ function Success({
         </svg>
       </div>
       <h3 className="font-display mt-5 text-3xl text-ink">
-        Thanks{name ? `, ${name.split(" ")[0]}` : ""}.
+        Thank you{name ? `, ${name.split(" ")[0]}` : ""}!
       </h3>
       <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-        Your request is ready. Tap “Send to our inbox” to deliver it, and
-        we&apos;ll reply within one business day with a quote and next steps.
+        We&apos;ve received your request. Please wait for our message through
+        email or your contact number — usually within one business day.
       </p>
+      {reference && (
+        <p className="mt-3 font-mono text-xs uppercase tracking-[0.14em] text-muted">
+          Reference <span className="text-ink">{reference}</span>
+        </p>
+      )}
       <div className="mx-auto mt-6 max-w-sm rounded-xl border border-line bg-canvas p-4 text-left">
         <dl className="space-y-1.5">
           {summary.map(([k, v]) => (
