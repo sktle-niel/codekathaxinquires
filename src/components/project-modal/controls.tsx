@@ -58,18 +58,24 @@ export function Field({
   label,
   value,
   onChange,
+  onBlur,
   placeholder,
   type = "text",
   required,
   optional,
+  error,
+  inputMode,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   type?: string;
   required?: boolean;
   optional?: boolean;
+  error?: string;
+  inputMode?: "text" | "email" | "tel" | "numeric";
 }) {
   return (
     <label className="block">
@@ -80,11 +86,20 @@ export function Field({
       </span>
       <input
         type={type}
+        inputMode={inputMode}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
-        className="mt-1.5 w-full rounded-md border border-line bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-ink focus:ring-1 focus:ring-ink"
+        aria-invalid={error ? true : undefined}
+        className={cn(
+          "mt-1.5 w-full rounded-md border bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-muted/70 focus:ring-1",
+          error
+            ? "border-[#d98b89] focus:border-[#c0524f] focus:ring-[#c0524f]"
+            : "border-line focus:border-ink focus:ring-ink"
+        )}
       />
+      {error && <span className="mt-1.5 block text-[13px] text-[#9f2f2d]">{error}</span>}
     </label>
   );
 }
@@ -93,15 +108,19 @@ export function TextArea({
   label,
   value,
   onChange,
+  onBlur,
   placeholder,
   required,
+  error,
   rows = 4,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   required?: boolean;
+  error?: string;
   rows?: number;
 }) {
   return (
@@ -113,10 +132,18 @@ export function TextArea({
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         rows={rows}
-        className="mt-1.5 w-full resize-none rounded-md border border-line bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-ink focus:ring-1 focus:ring-ink"
+        aria-invalid={error ? true : undefined}
+        className={cn(
+          "mt-1.5 w-full resize-none rounded-md border bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-muted/70 focus:ring-1",
+          error
+            ? "border-[#d98b89] focus:border-[#c0524f] focus:ring-[#c0524f]"
+            : "border-line focus:border-ink focus:ring-ink"
+        )}
       />
+      {error && <span className="mt-1.5 block text-[13px] text-[#9f2f2d]">{error}</span>}
     </label>
   );
 }

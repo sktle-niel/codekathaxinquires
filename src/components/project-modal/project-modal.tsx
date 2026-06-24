@@ -21,9 +21,16 @@ import {
   TextArea,
 } from "./controls";
 import { submitQuote } from "@/lib/api";
+import {
+  validateName,
+  validateEmail,
+  validateContact,
+  validateText,
+  validateDescription,
+  validateCustomBudget,
+} from "@/lib/validation";
 
 const FORM_STEPS = 4;
-const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const labelOf = (list: Option[], id: string) =>
   list.find((o) => o.id === id)?.title ?? "—";
 
@@ -48,6 +55,7 @@ export function ProjectModal({
   );
   const [errorMsg, setErrorMsg] = useState("");
   const [reference, setReference] = useState("");
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   // fresh state every time the modal opens
   useEffect(() => {
@@ -58,6 +66,7 @@ export function ProjectModal({
       setPhase("form");
       setErrorMsg("");
       setReference("");
+      setTouched({});
     }
   }, [open]);
 
@@ -87,27 +96,57 @@ export function ProjectModal({
   const isCapstone = data.path === "capstone";
   const budgets = isCapstone ? CAPSTONE_BUDGETS : BUSINESS_BUDGETS;
 
-  const canProceed = (s: number): boolean => {
+  // Per-step validation. Returns { field: message } for anything invalid.
+  const stepErrors = (s: number): Record<string, string> => {
+    const e: Record<string, string> = {};
+    const add = (k: string, msg: string | null) => {
+      if (msg) e[k] = msg;
+    };
     switch (s) {
       case 0:
-        return !!data.path;
+        if (!data.path) e.path = "Please choose what this project is for.";
+        break;
       case 1:
-        return isCapstone ? !!data.systemType : !!data.service;
+        if (isCapstone) {
+          if (!data.systemType) e.systemType = "Please choose a system type.";
+        } else if (!data.service) {
+          e.service = "Please choose what you need.";
+        }
+        break;
       case 2:
-        return isCapstone
-          ? data.projectTitle.trim() !== "" && data.description.trim() !== ""
-          : data.businessName.trim() !== "" && data.description.trim() !== "";
+        if (isCapstone) {
+          add("projectTitle", validateText(data.projectTitle, { label: "your project title", min: 3 }));
+        } else {
+          add("businessName", validateText(data.businessName, { label: "your business name", min: 2 }));
+          if (data.industry.trim()) {
+            add("industry", validateText(data.industry, { label: "industry", min: 2 }));
+          }
+        }
+        add("description", validateDescription(data.description));
+        break;
       case 3:
-        return (
-          data.budget !== "" &&
-          (data.budget !== "custom" || data.customBudget.trim() !== "")
-        );
+        if (!data.budget) {
+          e.budget = "Please select a budget.";
+        } else if (data.budget === "custom") {
+          add("customBudget", validateCustomBudget(data.customBudget));
+        }
+        break;
       case 4:
-        return data.name.trim() !== "" && emailOk(data.email);
-      default:
-        return false;
+        add("name", validateName(data.name));
+        add("email", validateEmail(data.email));
+        add("phone", validateContact(data.phone));
+        if (data.org.trim()) {
+          add("org", validateText(data.org, { label: isCapstone ? "school" : "company", min: 2 }));
+        }
+        break;
     }
+    return e;
   };
+
+  const errors = stepErrors(step);
+  const canProceed = (s: number): boolean => Object.keys(stepErrors(s)).length === 0;
+  const markTouched = (k: string) => setTouched((t) => (t[k] ? t : { ...t, [k]: true }));
+  const errOf = (k: string): string | undefined => (touched[k] ? errors[k] : undefined);
 
   const choosePath = (p: Path) => {
     setDir(1);
@@ -127,7 +166,11 @@ export function ProjectModal({
     }
   };
   const submit = async () => {
-    if (!canProceed(FORM_STEPS) || phase === "sending") return;
+    if (phase === "sending") return;
+    if (!canProceed(FORM_STEPS)) {
+      setTouched((t) => ({ ...t, name: true, email: true, phone: true, org: true }));
+      return;
+    }
     setPhase("sending");
     setErrorMsg("");
     try {
@@ -319,6 +362,8 @@ export function ProjectModal({
                             label="Project title"
                             value={data.projectTitle}
                             onChange={(v) => set("projectTitle", v)}
+                            onBlur={() => markTouched("projectTitle")}
+                            error={errOf("projectTitle")}
                             placeholder="e.g. Library Management System"
                             required
                           />
@@ -326,6 +371,8 @@ export function ProjectModal({
                             label="What should it do?"
                             value={data.description}
                             onChange={(v) => set("description", v)}
+                            onBlur={() => markTouched("description")}
+                            error={errOf("description")}
                             placeholder="Main features, users, and any requirements from your adviser."
                             required
                           />
@@ -348,6 +395,8 @@ export function ProjectModal({
                             label="Business name"
                             value={data.businessName}
                             onChange={(v) => set("businessName", v)}
+                            onBlur={() => markTouched("businessName")}
+                            error={errOf("businessName")}
                             placeholder="e.g. Sunrise Travel & Tours"
                             required
                           />
@@ -355,6 +404,8 @@ export function ProjectModal({
                             label="Industry"
                             value={data.industry}
                             onChange={(v) => set("industry", v)}
+                            onBlur={() => markTouched("industry")}
+                            error={errOf("industry")}
                             placeholder="e.g. Travel, Retail, Food"
                             optional
                           />
@@ -362,6 +413,8 @@ export function ProjectModal({
                             label="What do you want to build?"
                             value={data.description}
                             onChange={(v) => set("description", v)}
+                            onBlur={() => markTouched("description")}
+                            error={errOf("description")}
                             placeholder="Goals, features, and who it's for."
                             required
                           />
@@ -398,6 +451,8 @@ export function ProjectModal({
                               label="Your budget"
                               value={data.customBudget}
                               onChange={(v) => set("customBudget", v)}
+                              onBlur={() => markTouched("customBudget")}
+                              error={errOf("customBudget")}
                               placeholder="e.g. ₱4,500 or what you can afford"
                               required
                             />
@@ -435,14 +490,19 @@ export function ProjectModal({
                             label="Full name"
                             value={data.name}
                             onChange={(v) => set("name", v)}
+                            onBlur={() => markTouched("name")}
+                            error={errOf("name")}
                             placeholder="Your name"
                             required
                           />
                           <Field
                             label="Email"
                             type="email"
+                            inputMode="email"
                             value={data.email}
                             onChange={(v) => set("email", v)}
+                            onBlur={() => markTouched("email")}
+                            error={errOf("email")}
                             placeholder="you@email.com"
                             required
                           />
@@ -450,6 +510,8 @@ export function ProjectModal({
                             label="Phone / Messenger"
                             value={data.phone}
                             onChange={(v) => set("phone", v)}
+                            onBlur={() => markTouched("phone")}
+                            error={errOf("phone")}
                             placeholder="09xx xxx xxxx"
                             optional
                           />
@@ -457,6 +519,8 @@ export function ProjectModal({
                             label={isCapstone ? "School" : "Company"}
                             value={data.org}
                             onChange={(v) => set("org", v)}
+                            onBlur={() => markTouched("org")}
+                            error={errOf("org")}
                             placeholder={
                               isCapstone ? "Your school / university" : "Your company"
                             }
