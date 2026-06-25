@@ -643,8 +643,9 @@ function Success({
         Thank you{name ? `, ${name.split(" ")[0]}` : ""}!
       </h3>
       <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
-        We&apos;ve received your request. Please wait for our message through
-        email or your contact number — usually within one business day.
+        We&apos;ve received your request and sent a confirmation to your email.
+        We&apos;ll send you a message as soon as possible — usually within one
+        business day.
       </p>
       {reference && (
         <p className="mt-3 font-mono text-xs uppercase tracking-[0.14em] text-muted">
