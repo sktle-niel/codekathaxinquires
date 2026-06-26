@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Wordmark } from "@/components/ui/wordmark";
 import { NAV, SERVICES } from "@/lib/site";
 
@@ -53,6 +54,22 @@ export function Footer() {
               >
                 Back to top
               </a>
+            </li>
+            <li className="pt-1.5">
+              <Link
+                to="/apply"
+                className="text-sm font-medium text-ink transition-colors hover:text-brand-ink"
+              >
+                Apply as Agent
+              </Link>
+            </li>
+            <li>
+              <Link
+                to="/login"
+                className="text-sm text-ink-soft transition-colors hover:text-ink"
+              >
+                Log in
+              </Link>
             </li>
           </ul>
         </div>
