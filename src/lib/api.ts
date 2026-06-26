@@ -1,4 +1,5 @@
 import type { QuoteData } from "@/lib/quote";
+import { getRef } from "@/lib/referral";
 
 // Base URL of the PHP API. Configure via VITE_API_BASE (see .env). When empty,
 // requests go to the same origin that serves the site.
@@ -23,7 +24,8 @@ export async function submitQuote(data: QuoteData): Promise<SubmitResult> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     // `hp` is a honeypot the server checks for spam — always empty for real users.
-    body: JSON.stringify({ ...data, hp: "" }),
+    // `ref` attributes the submission to the agent whose link the client used.
+    body: JSON.stringify({ ...data, hp: "", ref: getRef() }),
   });
 
   const json = (await res.json().catch(() => null)) as ApiResponse | null;

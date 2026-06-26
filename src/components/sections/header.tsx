@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Wordmark } from "@/components/ui/wordmark";
 import { useProjectModal } from "@/components/project-modal/use-project-modal";
 import { NAV } from "@/lib/site";
@@ -40,7 +41,13 @@ export function Header() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/login"
+            className="hidden text-sm font-medium text-ink transition-colors hover:text-muted sm:inline-block"
+          >
+            Log in
+          </Link>
           <button
             type="button"
             onClick={openModal}
@@ -71,6 +78,13 @@ export function Header() {
               {n.label}
             </a>
           ))}
+          <Link
+            to="/login"
+            onClick={() => setOpen(false)}
+            className="rounded-md px-2 py-2.5 text-sm font-medium text-ink hover:bg-brand-soft"
+          >
+            Log in
+          </Link>
           <button
             type="button"
             onClick={() => {
