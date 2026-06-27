@@ -58,7 +58,14 @@ export type AgentMe = {
     earnings: number;
     rate: number;
   };
+};
+
+export type AgentClientsPage = {
   clients: AgentClient[];
+  page: number;
+  pages: number;
+  total: number;
+  has_more: boolean;
 };
 
 export type ApplyInput = {
@@ -107,6 +114,17 @@ export function agentApply(data: ApplyInput) {
 
 export function agentMe() {
   return request<AgentMe>("?do=me", { auth: true });
+}
+
+export function agentDates() {
+  return request<{ dates: string[] }>("?do=dates", { auth: true });
+}
+
+export function agentClients(page = 1, month = "", day = "") {
+  const q = new URLSearchParams({ do: "clients", page: String(page) });
+  if (month) q.set("month", month);
+  if (day && day !== "all") q.set("day", day);
+  return request<AgentClientsPage>(`?${q.toString()}`, { auth: true });
 }
 
 export async function agentLogout() {

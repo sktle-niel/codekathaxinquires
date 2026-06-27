@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentShell } from "@/components/agent/agent-shell";
+import { DateFilter } from "@/components/ui/date-filter";
 import {
   adminAgents,
+  adminDates,
   adminRequests,
   adminSummary,
   adminSetAgentStatus,
@@ -30,42 +32,84 @@ export function AdminDashboard() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [agents, setAgents] = useState<AdminAgent[]>([]);
+  const [dates, setDates] = useState<string[]>([]);
+  const [month, setMonth] = useState("");
+  const [day, setDay] = useState("all");
   const [requests, setRequests] = useState<AdminRequest[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [reqVersion, setReqVersion] = useState(0);
 
   const requestsRef = useRef<HTMLHeadingElement>(null);
   const firstLoad = useRef(true);
 
-  const load = useCallback(async () => {
-    try {
-      const [s, a, r] = await Promise.all([
-        adminSummary(),
-        adminAgents(),
-        adminRequests(page),
-      ]);
-      setSummary(s);
-      setAgents(a.agents);
-      setRequests(r.requests);
-      setPages(r.pages);
-      setTotal(r.total);
-      setLoaded(true);
-    } catch (e) {
-      if ((e as { status?: number }).status === 401) {
-        navigate("/login", { replace: true });
-      }
-    }
-  }, [navigate, page]);
-
+  // Initial: summary, agents, and the dates that have data.
   useEffect(() => {
     if (!getAdminToken()) {
       navigate("/login", { replace: true });
       return;
     }
-    load();
-  }, [navigate, load]);
+    Promise.all([adminSummary(), adminAgents(), adminDates()])
+      .then(([s, a, d]) => {
+        setSummary(s);
+        setAgents(a.agents);
+        setDates(d.dates);
+        if (d.dates[0]) {
+          setMonth(d.dates[0].slice(0, 7));
+          setDay(d.dates[0].slice(8, 10));
+        }
+        setLoaded(true);
+      })
+      .catch((e) => {
+        if ((e as { status?: number }).status === 401) {
+          navigate("/login", { replace: true });
+        }
+      });
+  }, [navigate]);
+
+  // Requests: refetch on filter / page / action change.
+  const loadRequests = useCallback(async () => {
+    if (!loaded) return;
+    try {
+      const r = await adminRequests(page, month, day);
+      setRequests(r.requests);
+      setPages(r.pages);
+      setTotal(r.total);
+    } catch (e) {
+      if ((e as { status?: number }).status === 401) {
+        navigate("/login", { replace: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, page, month, day, reqVersion, navigate]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
+
+  // After an action, refresh the totals (and agent list).
+  const refreshOverview = useCallback(async () => {
+    try {
+      const [s, a] = await Promise.all([adminSummary(), adminAgents()]);
+      setSummary(s);
+      setAgents(a.agents);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onAgentChanged = () => refreshOverview();
+  const onDealSaved = async () => {
+    await refreshOverview();
+    setReqVersion((v) => v + 1);
+  };
+  const onFilter = (m: string, d: string) => {
+    setMonth(m);
+    setDay(d);
+    setPage(1);
+  };
 
   // Scroll the requests list into view when paging (but not on first load).
   useEffect(() => {
@@ -155,7 +199,7 @@ export function AdminDashboard() {
               </thead>
               <tbody>
                 {agents.map((a) => (
-                  <AgentRow key={a.id} a={a} onChanged={load} />
+                  <AgentRow key={a.id} a={a} onChanged={onAgentChanged} />
                 ))}
               </tbody>
             </table>
@@ -164,20 +208,23 @@ export function AdminDashboard() {
       </div>
 
       {/* requests */}
-      <h2
-        ref={requestsRef}
-        className="mt-12 scroll-mt-24 text-lg font-bold tracking-tight text-ink"
-      >
-        Project requests <span className="text-muted">({total})</span>
-      </h2>
+      <div className="mt-12 flex flex-wrap items-center justify-between gap-3">
+        <h2
+          ref={requestsRef}
+          className="scroll-mt-24 text-lg font-bold tracking-tight text-ink"
+        >
+          Project requests <span className="text-muted">({total})</span>
+        </h2>
+        <DateFilter dates={dates} month={month} day={day} onChange={onFilter} />
+      </div>
       <div className="mt-4 space-y-4">
         {requests.length === 0 ? (
           <div className="rounded-2xl border border-line bg-surface px-6 py-8 text-center text-sm text-muted">
-            No requests yet.
+            No requests for this date.
           </div>
         ) : (
           requests.map((r) => (
-            <RequestCard key={r.id} r={r} pct={pct} onSaved={load} />
+            <RequestCard key={r.id} r={r} pct={pct} onSaved={onDealSaved} />
           ))
         )}
       </div>
