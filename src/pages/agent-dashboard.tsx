@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AgentShell } from "@/components/agent/agent-shell";
+import { PortalShell } from "@/components/admin/portal-shell";
+import { AccountSettings } from "@/components/account/account-settings";
 import { DateFilter } from "@/components/ui/date-filter";
 import {
   agentMe,
   agentDates,
   agentClients,
+  agentUpdateAccount,
   agentLogout,
   getToken,
   type AgentMe,
@@ -21,7 +23,46 @@ const STATUS_STYLES: Record<string, string> = {
   lost: "bg-[#fdebec] text-[#9f2f2d]",
 };
 
+const AGENT_NAV = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "account", label: "Account" },
+] as const;
+type AgentView = (typeof AGENT_NAV)[number]["id"];
+
 export function AgentDashboard() {
+  const navigate = useNavigate();
+  const [view, setView] = useState<AgentView>("dashboard");
+
+  useEffect(() => {
+    if (!getToken()) navigate("/login", { replace: true });
+  }, [navigate]);
+
+  const logout = async () => {
+    await agentLogout();
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <PortalShell items={AGENT_NAV} view={view} onView={setView} onLogout={logout}>
+      {view === "dashboard" && <AgentOverview />}
+      {view === "account" && <AgentAccountView />}
+    </PortalShell>
+  );
+}
+
+function AgentAccountView() {
+  return (
+    <AccountSettings
+      load={() =>
+        agentMe().then((m) => ({ name: m.agent.name, email: m.agent.email }))
+      }
+      save={(d) => agentUpdateAccount(d)}
+      blurb="Update your agent login. Your referral link stays the same."
+    />
+  );
+}
+
+function AgentOverview() {
   const navigate = useNavigate();
   const [me, setMe] = useState<AgentMe | null>(null);
   const [dates, setDates] = useState<string[]>([]);
@@ -76,22 +117,10 @@ export function AgentDashboard() {
     setPage(1);
   };
 
-  const logout = async () => {
-    await agentLogout();
-    navigate("/login", { replace: true });
-  };
-
-  if (!me) {
-    return (
-      <AgentShell>
-        <p className="text-sm text-muted">Loading…</p>
-      </AgentShell>
-    );
-  }
+  if (!me) return <p className="text-sm text-muted">Loading…</p>;
 
   const { agent, stats } = me;
   const refLink = `${window.location.origin}/?ref=${agent.ref_token}`;
-  const pct = Math.round(stats.rate * 100);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(refLink);
@@ -103,29 +132,18 @@ export function AgentDashboard() {
   };
 
   return (
-    <AgentShell
-      right={
-        <button
-          type="button"
-          onClick={logout}
-          className="text-sm font-medium text-muted transition-colors hover:text-ink"
-        >
-          Log out
-        </button>
-      }
-    >
+    <>
       <div className="mb-8">
         <h1 className="font-display text-3xl text-ink md:text-4xl">
           Hi, {agent.name.split(" ")[0]}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          You earn <span className="font-semibold text-ink">{pct}%</span> on every
-          project from your referrals. Payouts via {agent.payout_method}
+          You earn a commission on every won project from your referrals. Payouts
+          via {agent.payout_method}
           {agent.payout_number ? ` · ${agent.payout_number}` : ""}.
         </p>
       </div>
 
-      {/* referral link */}
       <div className="rounded-2xl border border-line bg-surface p-6">
         <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
           Your referral link
@@ -144,15 +162,13 @@ export function AgentDashboard() {
         </div>
       </div>
 
-      {/* stats (all-time totals) */}
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Referrals" value={String(stats.referrals)} />
         <Stat label="In progress" value={String(stats.pending)} />
         <Stat label="Won" value={String(stats.won)} />
-        <Stat label={`Earnings (${pct}%)`} value={peso(stats.earnings)} highlight />
+        <Stat label="Earnings" value={peso(stats.earnings)} highlight />
       </div>
 
-      {/* clients */}
       <div className="mt-12 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold tracking-tight text-ink">
           Your referred clients
@@ -174,7 +190,7 @@ export function AgentDashboard() {
                   <th className="px-6 py-3 font-medium">Client</th>
                   <th className="px-6 py-3 font-medium">Status</th>
                   <th className="px-6 py-3 font-medium text-right">Deal</th>
-                  <th className="px-6 py-3 font-medium text-right">Your {pct}%</th>
+                  <th className="px-6 py-3 font-medium text-right">Your share</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,7 +206,7 @@ export function AgentDashboard() {
       {pages > 1 && (
         <Pager page={page} pages={pages} total={total} onPage={setPage} />
       )}
-    </AgentShell>
+    </>
   );
 }
 
@@ -270,7 +286,14 @@ function ClientRow({ c }: { c: AgentClient }) {
         {c.deal_amount ? peso(c.deal_amount) : "—"}
       </td>
       <td className="px-6 py-3 text-right font-semibold text-brand-ink">
-        {c.commission ? peso(c.commission) : "—"}
+        {c.commission ? (
+          <>
+            {peso(c.commission)}{" "}
+            <span className="font-normal text-muted">· {c.commission_pct}%</span>
+          </>
+        ) : (
+          "—"
+        )}
       </td>
     </tr>
   );

@@ -45,6 +45,7 @@ export type AgentClient = {
   path: string;
   deal_amount: number | null;
   deal_status: "lead" | "won" | "lost";
+  commission_pct: number;
   created_at: string;
   commission: number;
 };
@@ -56,7 +57,6 @@ export type AgentMe = {
     won: number;
     pending: number;
     earnings: number;
-    rate: number;
   };
 };
 
@@ -125,6 +125,19 @@ export function agentClients(page = 1, month = "", day = "") {
   if (month) q.set("month", month);
   if (day && day !== "all") q.set("day", day);
   return request<AgentClientsPage>(`?${q.toString()}`, { auth: true });
+}
+
+export function agentUpdateAccount(data: {
+  name: string;
+  email: string;
+  current_password: string;
+  new_password: string;
+}) {
+  return request<{ ok: true; name: string; email: string }>("?do=account", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify(data),
+  });
 }
 
 export async function agentLogout() {
