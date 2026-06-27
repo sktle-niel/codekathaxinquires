@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AgentShell } from "@/components/agent/agent-shell";
+import { DateFilter } from "@/components/ui/date-filter";
 import {
   agentMe,
+  agentDates,
+  agentClients,
   agentLogout,
   getToken,
   type AgentMe,
@@ -20,7 +23,15 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function AgentDashboard() {
   const navigate = useNavigate();
-  const [data, setData] = useState<AgentMe | null>(null);
+  const [me, setMe] = useState<AgentMe | null>(null);
+  const [dates, setDates] = useState<string[]>([]);
+  const [month, setMonth] = useState("");
+  const [day, setDay] = useState("all");
+  const [clients, setClients] = useState<AgentClient[]>([]);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [ready, setReady] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -28,17 +39,49 @@ export function AgentDashboard() {
       navigate("/login", { replace: true });
       return;
     }
-    agentMe()
-      .then(setData)
+    Promise.all([agentMe(), agentDates()])
+      .then(([m, d]) => {
+        setMe(m);
+        setDates(d.dates);
+        if (d.dates[0]) {
+          setMonth(d.dates[0].slice(0, 7));
+          setDay(d.dates[0].slice(8, 10));
+        }
+        setReady(true);
+      })
       .catch(() => navigate("/login", { replace: true }));
   }, [navigate]);
+
+  const loadClients = useCallback(async () => {
+    if (!ready) return;
+    try {
+      const c = await agentClients(page, month, day);
+      setClients(c.clients);
+      setPages(c.pages);
+      setTotal(c.total);
+    } catch (e) {
+      if ((e as { status?: number }).status === 401) {
+        navigate("/login", { replace: true });
+      }
+    }
+  }, [ready, page, month, day, navigate]);
+
+  useEffect(() => {
+    loadClients();
+  }, [loadClients]);
+
+  const onFilter = (m: string, d: string) => {
+    setMonth(m);
+    setDay(d);
+    setPage(1);
+  };
 
   const logout = async () => {
     await agentLogout();
     navigate("/login", { replace: true });
   };
 
-  if (!data) {
+  if (!me) {
     return (
       <AgentShell>
         <p className="text-sm text-muted">Loading…</p>
@@ -46,7 +89,7 @@ export function AgentDashboard() {
     );
   }
 
-  const { agent, stats, clients } = data;
+  const { agent, stats } = me;
   const refLink = `${window.location.origin}/?ref=${agent.ref_token}`;
   const pct = Math.round(stats.rate * 100);
   const copy = async () => {
@@ -99,13 +142,9 @@ export function AgentDashboard() {
             {copied ? "Copied!" : "Copy link"}
           </button>
         </div>
-        <p className="mt-3 text-[13px] text-muted">
-          Share this link with your clients. Anyone who submits a project through
-          it is automatically tagged to you.
-        </p>
       </div>
 
-      {/* stats */}
+      {/* stats (all-time totals) */}
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Referrals" value={String(stats.referrals)} />
         <Stat label="In progress" value={String(stats.pending)} />
@@ -114,15 +153,17 @@ export function AgentDashboard() {
       </div>
 
       {/* clients */}
-      <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-surface">
-        <div className="border-b border-line px-6 py-4">
-          <h2 className="text-base font-bold tracking-tight text-ink">
-            Your referred clients
-          </h2>
-        </div>
+      <div className="mt-12 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold tracking-tight text-ink">
+          Your referred clients
+        </h2>
+        <DateFilter dates={dates} month={month} day={day} onChange={onFilter} />
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
         {clients.length === 0 ? (
           <p className="px-6 py-10 text-center text-sm text-muted">
-            No referrals yet. Share your link to get started.
+            No referrals for this date.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -133,9 +174,7 @@ export function AgentDashboard() {
                   <th className="px-6 py-3 font-medium">Client</th>
                   <th className="px-6 py-3 font-medium">Status</th>
                   <th className="px-6 py-3 font-medium text-right">Deal</th>
-                  <th className="px-6 py-3 font-medium text-right">
-                    Your {pct}%
-                  </th>
+                  <th className="px-6 py-3 font-medium text-right">Your {pct}%</th>
                 </tr>
               </thead>
               <tbody>
@@ -147,7 +186,47 @@ export function AgentDashboard() {
           </div>
         )}
       </div>
+
+      {pages > 1 && (
+        <Pager page={page} pages={pages} total={total} onPage={setPage} />
+      )}
     </AgentShell>
+  );
+}
+
+function Pager({
+  page,
+  pages,
+  total,
+  onPage,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <div className="mt-6 flex items-center justify-between">
+      <button
+        type="button"
+        onClick={() => onPage(Math.max(1, page - 1))}
+        disabled={page <= 1}
+        className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-ink/30 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        &larr; Previous
+      </button>
+      <span className="text-[13px] text-muted">
+        Showing {(page - 1) * 10 + 1}&ndash;{Math.min(page * 10, total)} of {total}
+      </span>
+      <button
+        type="button"
+        onClick={() => onPage(Math.min(pages, page + 1))}
+        disabled={page >= pages}
+        className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-ink/30 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Next &rarr;
+      </button>
+    </div>
   );
 }
 

@@ -108,7 +108,14 @@ export function adminSetAgentStatus(id: number, status: string) {
   });
 }
 
-export function adminRequests(page = 1) {
+export function adminDates() {
+  return request<{ dates: string[] }>("?do=dates", { auth: true });
+}
+
+export function adminRequests(page = 1, month = "", day = "") {
+  const q = new URLSearchParams({ do: "requests", page: String(page) });
+  if (month) q.set("month", month);
+  if (day && day !== "all") q.set("day", day);
   return request<{
     requests: AdminRequest[];
     rate: number;
@@ -116,7 +123,7 @@ export function adminRequests(page = 1) {
     pages: number;
     total: number;
     limit: number;
-  }>(`?do=requests&page=${page}`, { auth: true });
+  }>(`?${q.toString()}`, { auth: true });
 }
 
 export function adminSetDeal(
