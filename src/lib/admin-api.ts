@@ -55,6 +55,7 @@ export type AdminRequest = {
   description: string;
   deal_amount: number | null;
   deal_status: "lead" | "won" | "lost";
+  commission_pct: number;
   created_at: string;
   agent_id: number | null;
   agent_name: string | null;
@@ -65,7 +66,8 @@ export type AdminSummary = {
   requests: { total: number; leads: number; won: number; lost: number };
   revenue: { won_total: number; agent_commission: number; owner_net: number };
   agents: { total: number; pending: number; approved: number };
-  rate: number;
+  default_pct: number;
+  max_pct: number;
 };
 
 type ApiError = { error?: string; errors?: Record<string, string> };
@@ -89,8 +91,12 @@ async function request<T>(
       json?.error ??
       (json?.errors ? Object.values(json.errors)[0] : undefined) ??
       `Request failed (${res.status})`;
-    const err = new Error(msg) as Error & { status?: number };
+    const err = new Error(msg) as Error & {
+      status?: number;
+      fields?: Record<string, string>;
+    };
     err.status = res.status;
+    if (json?.errors) err.fields = json.errors;
     throw err;
   }
   return json as T;
@@ -108,17 +114,21 @@ export function adminSetAgentStatus(id: number, status: string) {
   });
 }
 
-export function adminDates() {
-  return request<{ dates: string[] }>("?do=dates", { auth: true });
+export function adminDates(status = "") {
+  const q = new URLSearchParams({ do: "dates" });
+  if (status) q.set("status", status);
+  return request<{ dates: string[] }>(`?${q.toString()}`, { auth: true });
 }
 
-export function adminRequests(page = 1, month = "", day = "") {
+export function adminRequests(page = 1, month = "", day = "", status = "") {
   const q = new URLSearchParams({ do: "requests", page: String(page) });
   if (month) q.set("month", month);
   if (day && day !== "all") q.set("day", day);
+  if (status) q.set("status", status);
   return request<{
     requests: AdminRequest[];
-    rate: number;
+    default_pct: number;
+    max_pct: number;
     page: number;
     pages: number;
     total: number;
@@ -129,17 +139,61 @@ export function adminRequests(page = 1, month = "", day = "") {
 export function adminSetDeal(
   id: number,
   dealAmount: string,
-  dealStatus: string
+  dealStatus: string,
+  commissionPct: number
 ) {
-  return request<{ ok: true; commission: number }>("?do=deal", {
-    method: "POST",
-    auth: true,
-    body: JSON.stringify({ id, deal_amount: dealAmount, deal_status: dealStatus }),
-  });
+  return request<{ ok: true; commission: number; commission_pct: number }>(
+    "?do=deal",
+    {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({
+        id,
+        deal_amount: dealAmount,
+        deal_status: dealStatus,
+        commission_pct: commissionPct,
+      }),
+    }
+  );
 }
 
 export function adminSummary() {
   return request<AdminSummary>("?do=summary", { auth: true });
+}
+
+export type AdminSettings = {
+  agent_limit: number;
+  agents: { total: number; pending: number; approved: number };
+  commission: { default_pct: number; max_pct: number };
+};
+
+export function adminGetSettings() {
+  return request<AdminSettings>("?do=settings", { auth: true });
+}
+
+export function adminUpdateSettings(agentLimit: number) {
+  return request<{ ok: true; agent_limit: number }>("?do=settings", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({ agent_limit: agentLimit }),
+  });
+}
+
+export function adminGetAccount() {
+  return request<{ name: string; email: string }>("?do=account", { auth: true });
+}
+
+export function adminUpdateAccount(data: {
+  name: string;
+  email: string;
+  current_password: string;
+  new_password: string;
+}) {
+  return request<{ ok: true; name: string; email: string }>("?do=account", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify(data),
+  });
 }
 
 export async function adminLogout() {
