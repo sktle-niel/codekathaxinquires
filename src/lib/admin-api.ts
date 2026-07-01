@@ -52,6 +52,7 @@ export type AdminRequest = {
   system_type: string | null;
   budget: string | null;
   custom_budget: string | null;
+  downpayment: string | null;
   description: string;
   deal_amount: number | null;
   deal_status: "lead" | "won" | "lost";
@@ -140,21 +141,25 @@ export function adminSetDeal(
   id: number,
   dealAmount: string,
   dealStatus: string,
-  commissionPct: number
+  commissionPct: number,
+  downpayment: string
 ) {
-  return request<{ ok: true; commission: number; commission_pct: number }>(
-    "?do=deal",
-    {
-      method: "POST",
-      auth: true,
-      body: JSON.stringify({
-        id,
-        deal_amount: dealAmount,
-        deal_status: dealStatus,
-        commission_pct: commissionPct,
-      }),
-    }
-  );
+  return request<{
+    ok: true;
+    commission: number;
+    commission_pct: number;
+    downpayment: string | null;
+  }>("?do=deal", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({
+      id,
+      deal_amount: dealAmount,
+      deal_status: dealStatus,
+      commission_pct: commissionPct,
+      downpayment,
+    }),
+  });
 }
 
 export function adminSummary() {

@@ -128,3 +128,12 @@ export function validateCustomBudget(raw: string): string | null {
   if (!/\d/.test(s)) return "Please include an amount, e.g. ₱4,500.";
   return null;
 }
+
+/** Optional downpayment the client proposes (must include an amount if given). */
+export function validateDownpayment(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null; // optional — the client can skip it
+  if (s.length > 120) return "That's too long.";
+  if (!/\d/.test(s)) return "Please include an amount, e.g. ₱2,000.";
+  return null;
+}

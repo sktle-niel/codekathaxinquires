@@ -17,6 +17,13 @@ import {
 const peso = (n: number) =>
   "₱" + Number(n).toLocaleString("en-PH", { maximumFractionDigits: 2 });
 
+/** Show a downpayment: format as pesos when it's numeric, else show as typed. */
+const showDp = (v: string | null): string => {
+  if (!v) return "—";
+  const digits = v.replace(/[^\d.]/g, "");
+  return digits ? peso(Number(digits)) : v;
+};
+
 const STATUS_STYLES: Record<string, string> = {
   lead: "bg-canvas text-muted border border-line",
   won: "bg-brand-soft text-brand-ink",
@@ -25,6 +32,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 const AGENT_NAV = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "deals", label: "Deals" },
   { id: "account", label: "Account" },
 ] as const;
 type AgentView = (typeof AGENT_NAV)[number]["id"];
@@ -45,6 +53,7 @@ export function AgentDashboard() {
   return (
     <PortalShell items={AGENT_NAV} view={view} onView={setView} onLogout={logout}>
       {view === "dashboard" && <AgentOverview />}
+      {view === "deals" && <AgentDeals />}
       {view === "account" && <AgentAccountView />}
     </PortalShell>
   );
@@ -176,30 +185,102 @@ function AgentOverview() {
         <DateFilter dates={dates} month={month} day={day} onChange={onFilter} />
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
-        {clients.length === 0 ? (
-          <p className="px-6 py-10 text-center text-sm text-muted">
-            No referrals for this date.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-line text-[12px] uppercase tracking-[0.08em] text-muted">
-                  <th className="px-6 py-3 font-medium">Reference</th>
-                  <th className="px-6 py-3 font-medium">Client</th>
-                  <th className="px-6 py-3 font-medium">Status</th>
-                  <th className="px-6 py-3 font-medium text-right">Deal</th>
-                  <th className="px-6 py-3 font-medium text-right">Your share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map((c) => (
-                  <ClientRow key={c.reference} c={c} />
-                ))}
-              </tbody>
-            </table>
+      <div className="mt-4">
+        <ClientTable clients={clients} empty="No referrals for this date." />
+      </div>
+
+      {pages > 1 && (
+        <Pager page={page} pages={pages} total={total} onPage={setPage} />
+      )}
+    </>
+  );
+}
+
+const DEAL_TABS = [
+  { id: "lead", label: "Pending" },
+  { id: "won", label: "Completed" },
+] as const;
+type DealStage = (typeof DEAL_TABS)[number]["id"];
+
+/** Deals view — referrals split into Pending (in progress) and Completed (won),
+ *  fetched server-side by deal stage and paginated. */
+function AgentDeals() {
+  const navigate = useNavigate();
+  const [stage, setStage] = useState<DealStage>("lead");
+  const [clients, setClients] = useState<AgentClient[]>([]);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!getToken()) navigate("/login", { replace: true });
+  }, [navigate]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const c = await agentClients(page, "", "all", stage);
+      setClients(c.clients);
+      setPages(c.pages);
+      setTotal(c.total);
+    } catch (e) {
+      if ((e as { status?: number }).status === 401) {
+        navigate("/login", { replace: true });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [page, stage, navigate]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onStage = (s: DealStage) => {
+    setStage(s);
+    setPage(1);
+  };
+
+  return (
+    <>
+      <div className="mb-8">
+        <h1 className="font-display text-3xl text-ink md:text-4xl">Deals</h1>
+        <p className="mt-1 text-sm text-muted">
+          Referrals still in progress and the ones that have been completed.
+        </p>
+      </div>
+
+      <div className="inline-flex rounded-full border border-line bg-surface p-1">
+        {DEAL_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onStage(t.id)}
+            aria-current={stage === t.id ? "true" : undefined}
+            className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
+              stage === t.id ? "bg-ink text-canvas" : "text-muted hover:text-ink"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-6">
+        {loading ? (
+          <div className="rounded-2xl border border-line bg-surface px-6 py-10 text-center text-sm text-muted">
+            Loading…
           </div>
+        ) : (
+          <ClientTable
+            clients={clients}
+            empty={
+              stage === "won"
+                ? "No completed deals yet."
+                : "No pending referrals right now."
+            }
+          />
         )}
       </div>
 
@@ -267,6 +348,44 @@ function Stat({
   );
 }
 
+/** The referred-clients table (or an empty-state message). Shared by the
+ *  Dashboard overview and the Deals view. */
+function ClientTable({
+  clients,
+  empty,
+}: {
+  clients: AgentClient[];
+  empty: string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+      {clients.length === 0 ? (
+        <p className="px-6 py-10 text-center text-sm text-muted">{empty}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-line text-[12px] uppercase tracking-[0.08em] text-muted">
+                <th className="px-6 py-3 font-medium">Reference</th>
+                <th className="px-6 py-3 font-medium">Client</th>
+                <th className="px-6 py-3 font-medium">Status</th>
+                <th className="px-6 py-3 font-medium text-right">Deal</th>
+                <th className="px-6 py-3 font-medium text-right">Downpayment</th>
+                <th className="px-6 py-3 font-medium text-right">Your share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((c) => (
+                <ClientRow key={c.reference} c={c} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientRow({ c }: { c: AgentClient }) {
   const who = c.business_name || c.project_title || c.name;
   return (
@@ -285,6 +404,7 @@ function ClientRow({ c }: { c: AgentClient }) {
       <td className="px-6 py-3 text-right text-ink">
         {c.deal_amount ? peso(c.deal_amount) : "—"}
       </td>
+      <td className="px-6 py-3 text-right text-ink">{showDp(c.downpayment)}</td>
       <td className="px-6 py-3 text-right font-semibold text-brand-ink">
         {c.commission ? (
           <>

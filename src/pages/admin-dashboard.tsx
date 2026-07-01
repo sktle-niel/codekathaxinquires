@@ -541,6 +541,7 @@ function RequestCard({
   const [amount, setAmount] = useState(
     r.deal_amount !== null ? String(r.deal_amount) : ""
   );
+  const [downpayment, setDownpayment] = useState(r.downpayment ?? "");
   const [status, setStatus] = useState(r.deal_status);
   const [pct, setPct] = useState(r.commission_pct);
   const [busy, setBusy] = useState(false);
@@ -554,7 +555,7 @@ function RequestCard({
     setBusy(true);
     setSaved(false);
     try {
-      await adminSetDeal(r.id, amount, status, pct);
+      await adminSetDeal(r.id, amount, status, pct, downpayment);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
       await onSaved();
@@ -604,6 +605,18 @@ function RequestCard({
             onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
             inputMode="numeric"
             placeholder="0"
+            className="mt-1 w-36 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-ink focus:ring-1 focus:ring-ink"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[12px] font-medium text-muted">
+            Downpayment (₱)
+          </span>
+          <input
+            value={downpayment}
+            onChange={(e) => setDownpayment(e.target.value.replace(/[^\d.]/g, ""))}
+            inputMode="numeric"
+            placeholder="—"
             className="mt-1 w-36 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-ink focus:ring-1 focus:ring-ink"
           />
         </label>

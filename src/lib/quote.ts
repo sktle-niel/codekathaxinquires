@@ -78,6 +78,7 @@ export type QuoteData = {
   // budget
   budget: string;
   customBudget: string;
+  downpayment: string;
   // contact
   name: string;
   email: string;
@@ -97,6 +98,7 @@ export const INITIAL_DATA: QuoteData = {
   description: "",
   budget: "",
   customBudget: "",
+  downpayment: "",
   name: "",
   email: "",
   phone: "",

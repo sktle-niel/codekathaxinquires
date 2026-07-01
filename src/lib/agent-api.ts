@@ -44,6 +44,7 @@ export type AgentClient = {
   project_title: string | null;
   path: string;
   deal_amount: number | null;
+  downpayment: string | null;
   deal_status: "lead" | "won" | "lost";
   commission_pct: number;
   created_at: string;
@@ -120,10 +121,11 @@ export function agentDates() {
   return request<{ dates: string[] }>("?do=dates", { auth: true });
 }
 
-export function agentClients(page = 1, month = "", day = "") {
+export function agentClients(page = 1, month = "", day = "", status = "") {
   const q = new URLSearchParams({ do: "clients", page: String(page) });
   if (month) q.set("month", month);
   if (day && day !== "all") q.set("day", day);
+  if (status) q.set("status", status);
   return request<AgentClientsPage>(`?${q.toString()}`, { auth: true });
 }
 

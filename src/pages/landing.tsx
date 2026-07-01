@@ -4,15 +4,18 @@ import { Hero } from "@/components/sections/hero";
 import { Services } from "@/components/sections/services";
 import { Work } from "@/components/sections/work";
 import { Process } from "@/components/sections/process";
+import { Activity } from "@/components/sections/activity";
 import { Contact } from "@/components/sections/contact";
 import { Footer } from "@/components/sections/footer";
 import { ProjectModalProvider } from "@/components/project-modal/use-project-modal";
 import { captureRef } from "@/lib/referral";
+import { trackVisit } from "@/lib/visits";
 
 export function Landing() {
   // In-page links scroll smoothly but keep the URL clean (no "#section").
   useEffect(() => {
     captureRef(); // remember an agent's ?ref= token, then clean the URL
+    trackVisit(); // count this visit for the activity heatmap (deduped server-side)
 
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
@@ -48,6 +51,7 @@ export function Landing() {
           <Services />
           <Work />
           <Process />
+          <Activity />
           <Contact />
         </main>
         <Footer />
