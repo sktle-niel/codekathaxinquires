@@ -28,6 +28,7 @@ import {
   validateText,
   validateDescription,
   validateCustomBudget,
+  validateDownpayment,
 } from "@/lib/validation";
 
 const FORM_STEPS = 4;
@@ -130,6 +131,7 @@ export function ProjectModal({
         } else if (data.budget === "custom") {
           add("customBudget", validateCustomBudget(data.customBudget));
         }
+        add("downpayment", validateDownpayment(data.downpayment));
         break;
       case 4:
         add("name", validateName(data.name));
@@ -206,6 +208,7 @@ export function ProjectModal({
       if (data.industry) rows.push(["Industry", data.industry]);
     }
     rows.push(["Budget", budgetText]);
+    if (data.downpayment.trim()) rows.push(["Downpayment", data.downpayment]);
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isCapstone]);
@@ -458,6 +461,22 @@ export function ProjectModal({
                             />
                           </div>
                         )}
+                        <div className="mt-4">
+                          <Field
+                            label="Downpayment"
+                            value={data.downpayment}
+                            onChange={(v) => set("downpayment", v)}
+                            onBlur={() => markTouched("downpayment")}
+                            error={errOf("downpayment")}
+                            placeholder="e.g. ₱2,000"
+                            optional
+                          />
+                          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+                            This is just your initial downpayment — the final
+                            amount may still change once we finalize the project
+                            price together.
+                          </p>
+                        </div>
                       </>
                     )}
 
