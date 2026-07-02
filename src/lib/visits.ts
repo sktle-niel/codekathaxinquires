@@ -8,6 +8,7 @@ export type VisitData = {
   total: number;
   max: number;
   days: Record<string, number>; // { "YYYY-MM-DD": count }
+  completions: Record<string, number>; // days a project was completed
 };
 
 /** Fire-and-forget: count this visit for today. Deduped server-side, so extra
@@ -31,5 +32,6 @@ export async function fetchVisits(): Promise<VisitData> {
     total: json?.total ?? 0,
     max: json?.max ?? 0,
     days: (json?.days as Record<string, number>) ?? {},
+    completions: (json?.completions as Record<string, number>) ?? {},
   };
 }

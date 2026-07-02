@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { DateFilter } from "@/components/ui/date-filter";
 import { PortalShell } from "@/components/admin/portal-shell";
@@ -10,6 +10,12 @@ import {
   adminSummary,
   adminSetAgentStatus,
   adminSetDeal,
+  adminSetProgress,
+  adminUploadImage,
+  adminDeleteImage,
+  adminNotify,
+  adminComplete,
+  adminResendReceipt,
   adminGetSettings,
   adminUpdateSettings,
   adminGetAccount,
@@ -21,6 +27,7 @@ import {
   type AdminSummary,
   type AdminSettings,
 } from "@/lib/admin-api";
+import { imageUrl } from "@/lib/status";
 
 const ADMIN_NAV = [
   { id: "agents", label: "My Agents" },
@@ -42,6 +49,8 @@ const BADGE: Record<string, string> = {
   won: "bg-brand-soft text-brand-ink",
   lost: "bg-[#fdebec] text-[#9f2f2d]",
 };
+
+const PROGRESS_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 const unauthorized = (e: unknown) => (e as { status?: number }).status === 401;
 
@@ -546,6 +555,21 @@ function RequestCard({
   const [pct, setPct] = useState(r.commission_pct);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [progress, setProgress] = useState(r.progress);
+  const [note, setNote] = useState(r.progress_note ?? "");
+  const [images, setImages] = useState(r.images);
+  const [notified, setNotified] = useState(r.notified);
+  const [savingP, setSavingP] = useState(false);
+  const [savedP, setSavedP] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [imgErr, setImgErr] = useState("");
+  const [notifying, setNotifying] = useState(false);
+  const [showComplete, setShowComplete] = useState(false);
+  const [fullPaid, setFullPaid] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [completeErr, setCompleteErr] = useState("");
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   const who = r.business_name || r.project_title || r.name;
   const commission =
@@ -561,6 +585,79 @@ function RequestCard({
       await onSaved();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveProgress = async () => {
+    setSavingP(true);
+    setSavedP(false);
+    try {
+      await adminSetProgress(r.id, progress, note);
+      setSavedP(true);
+      setTimeout(() => setSavedP(false), 1500);
+    } finally {
+      setSavingP(false);
+    }
+  };
+
+  const onPickImage = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImgErr("");
+    setUploading(true);
+    try {
+      const img = await adminUploadImage(r.id, file);
+      setImages((prev) => [...prev, img]);
+    } catch (err) {
+      setImgErr(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeImage = async (imageId: number) => {
+    try {
+      await adminDeleteImage(imageId);
+      setImages((prev) => prev.filter((i) => i.id !== imageId));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const notifyClient = async () => {
+    setImgErr("");
+    setNotifying(true);
+    try {
+      await adminNotify(r.id);
+      setNotified(true);
+    } catch (err) {
+      setImgErr(err instanceof Error ? err.message : "Could not notify the client.");
+    } finally {
+      setNotifying(false);
+    }
+  };
+
+  const complete = async () => {
+    setCompleteErr("");
+    setCompleting(true);
+    try {
+      await adminComplete(r.id, amount, fullPaid);
+      await onSaved(); // moves it to Completed and out of Pending
+    } catch (err) {
+      setCompleteErr(err instanceof Error ? err.message : "Could not complete.");
+      setCompleting(false);
+    }
+  };
+
+  const resend = async () => {
+    setResending(true);
+    try {
+      await adminResendReceipt(r.id);
+      setResent(true);
+      setTimeout(() => setResent(false), 1500);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -614,7 +711,7 @@ function RequestCard({
           </span>
           <input
             value={downpayment}
-            onChange={(e) => setDownpayment(e.target.value.replace(/[^\d.]/g, ""))}
+            onChange={(e) => setDownpayment(e.target.value.replace(/[^\d]/g, ""))}
             inputMode="numeric"
             placeholder="—"
             className="mt-1 w-36 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-ink focus:ring-1 focus:ring-ink"
@@ -672,6 +769,191 @@ function RequestCard({
         >
           {busy ? "Saving…" : saved ? "Saved!" : "Save"}
         </button>
+      </div>
+
+      {/* Project progress — the client sees this on /track */}
+      <div className="mt-4 border-t border-line pt-4">
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] font-medium text-muted">
+            Project progress
+          </span>
+          <span className="font-display text-xl text-ink">{progress}%</span>
+        </div>
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-line">
+          <div
+            className="h-full rounded-full bg-ink transition-[width]"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {PROGRESS_STEPS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setProgress(v)}
+              className={`rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors ${
+                progress === v
+                  ? "bg-ink text-canvas"
+                  : "border border-line text-ink hover:border-ink/30"
+              }`}
+            >
+              {v}%
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          placeholder="Optional update note for the client…"
+          className="mt-3 w-full resize-none rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-ink focus:ring-1 focus:ring-ink"
+        />
+        <button
+          type="button"
+          onClick={saveProgress}
+          disabled={savingP}
+          className="mt-2 rounded-md bg-ink px-4 py-2 text-sm font-semibold text-canvas hover:bg-ink-soft disabled:opacity-40"
+        >
+          {savingP ? "Saving…" : savedP ? "Saved!" : "Save progress"}
+        </button>
+
+        {/* Update photos — available from 40% */}
+        {progress >= 40 && (
+          <div className="mt-4">
+            <p className="text-[12px] font-medium text-muted">
+              Update photos ({images.length}/5)
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {images.map((img) => (
+                <div key={img.id} className="relative">
+                  <img
+                    src={imageUrl(img.url)}
+                    alt="Project progress"
+                    className="size-20 rounded-md border border-line object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(img.id)}
+                    aria-label="Remove image"
+                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-ink text-[12px] leading-none text-canvas"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+              {images.length < 5 && (
+                <label className="flex size-20 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-line text-[11px] text-muted transition-colors hover:border-ink/40 hover:text-ink">
+                  {uploading ? "Uploading…" : "+ Add"}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={onPickImage}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+        )}
+
+        {imgErr && <p className="mt-2 text-[12px] text-[#9f2f2d]">{imgErr}</p>}
+
+        {/* Notify the client once we hit 90% */}
+        {progress >= 90 && (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={notifyClient}
+              disabled={notifying || notified}
+              className="rounded-md bg-brand-ink px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {notifying
+                ? "Sending…"
+                : notified
+                  ? "Client notified ✓"
+                  : "Notify client — ready for payment"}
+            </button>
+            <span className="text-[12px] text-muted">
+              Emails the client that the project is ~90% done.
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Mark as completed (+ receipt) / paid status */}
+      <div className="mt-4 border-t border-line pt-4">
+        {r.deal_status === "won" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-ink">
+              ✓ {r.paid ? "Completed · Paid in full" : "Completed"}
+            </span>
+            <button
+              type="button"
+              onClick={resend}
+              disabled={resending}
+              className="text-[13px] font-medium text-muted underline underline-offset-2 transition-colors hover:text-ink disabled:opacity-40"
+            >
+              {resending ? "Sending…" : resent ? "Receipt sent!" : "Resend receipt"}
+            </button>
+          </div>
+        ) : !showComplete ? (
+          <button
+            type="button"
+            onClick={() => setShowComplete(true)}
+            className="rounded-md bg-brand-ink px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Mark as completed
+          </button>
+        ) : (
+          <div className="rounded-xl border border-line bg-canvas p-4">
+            <p className="text-sm font-semibold text-ink">Complete this project</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
+              This sends {r.name.split(" ")[0]} a paid receipt and moves the
+              project to Completed.
+            </p>
+            <label className="mt-3 flex items-center gap-2.5 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={fullPaid}
+                onChange={(e) => setFullPaid(e.target.checked)}
+                className="size-4 rounded border-line accent-ink"
+              />
+              Full payment received
+            </label>
+            {!(Number(amount) > 0) && (
+              <p className="mt-2 text-[12px] text-[#9f2f2d]">
+                Set the final price above first.
+              </p>
+            )}
+            {completeErr && (
+              <p className="mt-2 text-[12px] text-[#9f2f2d]">{completeErr}</p>
+            )}
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={complete}
+                disabled={!fullPaid || !(Number(amount) > 0) || completing}
+                className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-canvas transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {completing ? "Completing…" : "Confirm & send receipt"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowComplete(false);
+                  setFullPaid(false);
+                  setCompleteErr("");
+                }}
+                className="text-sm font-medium text-muted transition-colors hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

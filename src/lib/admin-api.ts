@@ -61,6 +61,11 @@ export type AdminRequest = {
   agent_id: number | null;
   agent_name: string | null;
   agent_commission: number;
+  progress: number;
+  progress_note: string | null;
+  notified: boolean;
+  paid: boolean;
+  images: { id: number; url: string }[];
 };
 
 export type AdminSummary = {
@@ -159,6 +164,67 @@ export function adminSetDeal(
       commission_pct: commissionPct,
       downpayment,
     }),
+  });
+}
+
+export function adminSetProgress(id: number, progress: number, note: string) {
+  return request<{ ok: true; progress: number }>("?do=progress", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({ id, progress, note }),
+  });
+}
+
+export async function adminUploadImage(id: number, file: File) {
+  const fd = new FormData();
+  fd.append("id", String(id));
+  fd.append("image", file);
+  const headers: Record<string, string> = {};
+  const t = getAdminToken();
+  if (t) headers.Authorization = `Bearer ${t}`;
+  const res = await fetch(`${API_BASE}/admin.php?do=image-upload`, {
+    method: "POST",
+    headers, // no Content-Type: the browser sets the multipart boundary
+    body: fd,
+  });
+  const json = (await res.json().catch(() => null)) as
+    | { ok?: boolean; image?: { id: number; url: string }; error?: string }
+    | null;
+  if (!res.ok || !json?.ok || !json.image) {
+    throw new Error(json?.error ?? `Upload failed (${res.status})`);
+  }
+  return json.image;
+}
+
+export function adminDeleteImage(imageId: number) {
+  return request<{ ok: true }>("?do=image-delete", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({ image_id: imageId }),
+  });
+}
+
+export function adminNotify(id: number) {
+  return request<{ ok: true; emailed: boolean }>("?do=notify", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({ id }),
+  });
+}
+
+export function adminComplete(id: number, dealAmount: string, paid: boolean) {
+  return request<{ ok: true; emailed: boolean }>("?do=complete", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({ id, deal_amount: dealAmount, paid }),
+  });
+}
+
+export function adminResendReceipt(id: number) {
+  return request<{ ok: true; emailed: boolean }>("?do=resend-receipt", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({ id }),
   });
 }
 

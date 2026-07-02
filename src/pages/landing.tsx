@@ -5,6 +5,7 @@ import { Services } from "@/components/sections/services";
 import { Work } from "@/components/sections/work";
 import { Process } from "@/components/sections/process";
 import { Activity } from "@/components/sections/activity";
+import { Tracker } from "@/components/sections/tracker";
 import { Contact } from "@/components/sections/contact";
 import { Footer } from "@/components/sections/footer";
 import { ProjectModalProvider } from "@/components/project-modal/use-project-modal";
@@ -52,6 +53,7 @@ export function Landing() {
           <Work />
           <Process />
           <Activity />
+          <Tracker />
           <Contact />
         </main>
         <Footer />
