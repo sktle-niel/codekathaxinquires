@@ -129,11 +129,11 @@ export function validateCustomBudget(raw: string): string | null {
   return null;
 }
 
-/** Optional downpayment the client proposes (must include an amount if given). */
+/** Optional downpayment the client proposes: numbers only, at least ₱1,000. */
 export function validateDownpayment(raw: string): string | null {
   const s = raw.trim();
   if (!s) return null; // optional — the client can skip it
-  if (s.length > 120) return "That's too long.";
-  if (!/\d/.test(s)) return "Please include an amount, e.g. ₱2,000.";
+  if (!/^\d+$/.test(s)) return "Numbers only, please.";
+  if (Number(s) < 1000) return "The lowest downpayment is ₱1,000.";
   return null;
 }

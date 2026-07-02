@@ -465,16 +465,19 @@ export function ProjectModal({
                           <Field
                             label="Downpayment"
                             value={data.downpayment}
-                            onChange={(v) => set("downpayment", v)}
+                            onChange={(v) =>
+                              set("downpayment", v.replace(/[^\d]/g, ""))
+                            }
                             onBlur={() => markTouched("downpayment")}
                             error={errOf("downpayment")}
-                            placeholder="e.g. ₱2,000"
+                            placeholder="e.g. 2000 (₱1,000 min)"
+                            inputMode="numeric"
                             optional
                           />
                           <p className="mt-2 text-[13px] leading-relaxed text-muted">
-                            This is just your initial downpayment — the final
-                            amount may still change once we finalize the project
-                            price together.
+                            Numbers only, minimum ₱1,000. This is just your
+                            initial downpayment — the final amount may still
+                            change once we finalize the project price together.
                           </p>
                         </div>
                       </>

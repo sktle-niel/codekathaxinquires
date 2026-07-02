@@ -4,12 +4,14 @@ import { AgentApply } from "@/pages/agent-apply";
 import { AgentDashboard } from "@/pages/agent-dashboard";
 import { AdminDashboard } from "@/pages/admin-dashboard";
 import { Login } from "@/pages/login";
+import { Track } from "@/pages/track";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/track" element={<Track />} />
         <Route path="/apply" element={<AgentApply />} />
         <Route path="/login" element={<Login />} />
         <Route path="/agent" element={<AgentDashboard />} />

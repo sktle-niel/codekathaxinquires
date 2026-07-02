@@ -16,6 +16,8 @@ const MONTHS = [
 // Warm charcoal → ink ramp (on-brand, not GitHub green): 0 = empty hairline,
 // 1..4 deepen to the site's signature ink.
 const LEVELS = ["#eceae5", "#cbc9c2", "#928f88", "#4d4b47", "#18181b"];
+// The CODEKATHAX logo lime marks a day a project was completed (progress hit 100%).
+const COMPLETION_GREEN = "#c2f000";
 const REFRESH_MS = 60_000; // keep the graph live-ish for new visitors
 
 const toKey = (d: Date) =>
@@ -86,6 +88,7 @@ export function Activity() {
   const [data, setData] = useState<VisitData | null>(null);
   const [tip, setTip] = useState<Tip | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Live-ish: load now, refresh shortly after (to reflect the visit we just
   // counted), then poll so new visitors appear without a page reload.
@@ -108,16 +111,30 @@ export function Activity() {
   const { weeks, months } = useMemo(() => buildGrid(data?.days ?? {}), [data]);
   const max = data?.max ?? 0;
   const total = data?.total ?? 0;
+  const completions = data?.completions ?? {};
+  const completedTotal = Object.values(completions).reduce((s, n) => s + n, 0);
+
+  // Start scrolled all the way to the newest week so today's square is visible
+  // right away (the graph overflows to the right on small screens).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, []);
 
   const showTip = (e: React.MouseEvent<HTMLSpanElement>, cell: Cell) => {
     const card = cardRef.current;
     if (!card) return;
     const r = e.currentTarget.getBoundingClientRect();
     const c = card.getBoundingClientRect();
+    const comp = completions[cell.key] ?? 0;
+    const parts = [`${cell.count} ${cell.count === 1 ? "visitor" : "visitors"}`];
+    if (comp > 0) {
+      parts.push(`${comp} project${comp === 1 ? "" : "s"} completed`);
+    }
     setTip({
       x: r.left - c.left + r.width / 2,
       y: r.top - c.top,
-      text: `${cell.count} ${cell.count === 1 ? "visitor" : "visitors"} · ${prettyDate(cell.key)}`,
+      text: `${parts.join(", ")} · ${prettyDate(cell.key)}`,
     });
   };
 
@@ -140,8 +157,8 @@ export function Activity() {
           </div>
           <Reveal delay={0.1}>
             <p className="max-w-sm text-base leading-relaxed text-muted">
-              A year of traffic to this site — each cell is a day, counted once
-              per visitor. The darker the square, the more people stopped by.
+              A year of traffic to this site. Each cell is a day, counted once
+              per visitor; a green square marks a day a project was completed.
             </p>
           </Reveal>
         </div>
@@ -151,16 +168,28 @@ export function Activity() {
             ref={cardRef}
             className="relative mt-12 rounded-2xl border border-line bg-surface p-5 md:p-7"
           >
-            <div className="mb-5 flex items-baseline gap-2">
-              <span className="font-display text-3xl text-ink">
-                {total.toLocaleString("en-PH")}
-              </span>
-              <span className="text-sm text-muted">
-                {total === 1 ? "visitor" : "visitors"} in the last year
-              </span>
+            <div className="mb-5 flex flex-wrap items-baseline gap-x-8 gap-y-1">
+              <div className="flex items-baseline gap-2">
+                <span className="font-display text-3xl text-ink">
+                  {total.toLocaleString("en-PH")}
+                </span>
+                <span className="text-sm text-muted">
+                  {total === 1 ? "visitor" : "visitors"} in the last year
+                </span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="font-display text-3xl text-brand-ink">
+                  {completedTotal.toLocaleString("en-PH")}
+                </span>
+                <span className="text-sm text-muted">
+                  {completedTotal === 1
+                    ? "completed project"
+                    : "completed projects"}
+                </span>
+              </div>
             </div>
 
-            <div className="overflow-x-auto pb-1">
+            <div ref={scrollRef} className="overflow-x-auto pb-1">
               <div className="inline-flex gap-2">
                 {/* day-of-week labels (aligned to the cell rows) */}
                 <div className="flex flex-col gap-[3px] pt-[18px]">
@@ -200,7 +229,10 @@ export function Activity() {
                               onMouseLeave={() => setTip(null)}
                               className="size-3 rounded-[3px] ring-ink/50 transition-[box-shadow] hover:ring-2"
                               style={{
-                                backgroundColor: LEVELS[level(cell.count, max)],
+                                backgroundColor:
+                                  (completions[cell.key] ?? 0) > 0
+                                    ? COMPLETION_GREEN
+                                    : LEVELS[level(cell.count, max)],
                               }}
                             />
                           )
@@ -213,16 +245,25 @@ export function Activity() {
             </div>
 
             {/* legend */}
-            <div className="mt-4 flex items-center justify-end gap-1.5 text-[11px] text-muted">
-              <span className="mr-0.5">Less</span>
-              {LEVELS.map((c, i) => (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[11px] text-muted">
+              <span className="flex items-center gap-1.5">
                 <span
-                  key={i}
                   className="size-3 rounded-[3px]"
-                  style={{ backgroundColor: c }}
+                  style={{ backgroundColor: COMPLETION_GREEN }}
                 />
-              ))}
-              <span className="ml-0.5">More</span>
+                Project completed
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="mr-0.5">Less</span>
+                {LEVELS.map((c, i) => (
+                  <span
+                    key={i}
+                    className="size-3 rounded-[3px]"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+                <span className="ml-0.5">More</span>
+              </span>
             </div>
 
             {/* floating hover tooltip */}
